@@ -743,7 +743,7 @@ editBtn.addEventListener('click',    (e) => { e.stopPropagation(); exitPrompter(
 
 // ── Keyboard ─────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
-    if (prompter.style.display === 'none') return;
+    if (prompter.style.display !== 'block') return;
     switch (e.code) {
         case 'Space':  e.preventDefault(); togglePause(); break;
         case 'Escape': exitPrompter(); break;
@@ -788,8 +788,18 @@ function flashOverlay() {
     overlay.classList.add('visible');
     prompter.classList.add('show-cursor');
     clearTimeout(overlayTimer);
-    overlayTimer = setTimeout(() => overlay.classList.remove('visible'), 2800);
+    overlayTimer = setTimeout(() => {
+        if (!overlay.matches(':hover')) overlay.classList.remove('visible');
+    }, 2800);
 }
+
+overlay.addEventListener('mouseenter', () => {
+    clearTimeout(overlayTimer);
+    overlay.classList.add('visible');
+});
+overlay.addEventListener('mouseleave', () => {
+    overlayTimer = setTimeout(() => overlay.classList.remove('visible'), 800);
+});
 
 function scheduleHideCursor() {
     clearTimeout(cursorTimer);
