@@ -326,7 +326,7 @@ Without Voice Sync: text scrolls at the fixed speed you set."></textarea>
         <div class="ctrl">
             <label>Reading Speed</label>
             <div class="ctrl-row">
-                <input type="range" id="speedSlider" min="20" max="400" value="120">
+                <input type="range" id="speedSlider" min="20" max="750" value="120">
                 <span class="val" id="speedVal">120</span>
             </div>
         </div>
@@ -384,7 +384,7 @@ Without Voice Sync: text scrolls at the fixed speed you set."></textarea>
         <button class="obtn" id="voiceToggleBtn" style="display:none">🎤 Voice</button>
         <button class="obtn" id="editBtn">✕ Edit</button>
         <span id="oStatus">Speed: 120</span>
-        <div id="speedRow">Speed: <input type="range" id="overlaySpeedSlider" min="20" max="400" value="120"><span id="overlaySpeedVal">120</span></div>
+        <div id="speedRow">Speed: <input type="range" id="overlaySpeedSlider" min="20" max="750" value="120"><span id="overlaySpeedVal">120</span></div>
         <div id="rowRow">Row: <input type="range" id="rowSlider" min="0" max="40" value="2"></div>
         <span id="oHint">Space = pause · ↑↓ = speed · ← → = scrub · ESC = edit</span>
     </div>
@@ -743,13 +743,15 @@ editBtn.addEventListener('click',    (e) => { e.stopPropagation(); exitPrompter(
 
 // ── Keyboard ─────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement?.tagName;
+    if (tag === 'TEXTAREA' || tag === 'INPUT') return;
     if (prompter.style.display !== 'block') return;
     switch (e.code) {
         case 'Space':  e.preventDefault(); togglePause(); break;
         case 'Escape': exitPrompter(); break;
         case 'ArrowUp':
             e.preventDefault();
-            speed = Math.min(400, speed + 10);
+            speed = Math.min(750, speed + 10);
             syncSpeedUI();
             flashOverlay(); break;
         case 'ArrowDown':
