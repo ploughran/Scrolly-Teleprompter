@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teleprompter</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+            background: #161616;
+            color: #e8e8e8;
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ─── EDITOR ───────────────────────────────────────────── */
+
+        #editor {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 28px 32px 24px;
+            gap: 16px;
+        }
+
+        #editor h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            color: #fff;
+        }
+
+        #editor h1 span {
+            font-weight: 300;
+            color: #555;
+            font-size: 13px;
+            margin-left: 10px;
+        }
+
+        #scriptInput {
+            flex: 1;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 10px;
+            color: #f0f0f0;
+            font-size: 16px;
+            line-height: 1.7;
+            padding: 18px 20px;
+            resize: none;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        #scriptInput:focus { border-color: #555; }
+        #scriptInput.error { border-color: #e05; }
+
+        .controls {
+            display: flex;
+            align-items: flex-end;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .ctrl {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .ctrl label {
+            font-size: 11px;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .ctrl-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        input[type="range"] {
+            width: 120px;
+            accent-color: #888;
+            cursor: pointer;
+        }
+
+        .val {
+            font-size: 12px;
+            color: #777;
+            min-width: 36px;
+        }
+
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #888;
+            cursor: pointer;
+            user-select: none;
+            padding: 7px 12px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .toggle input { cursor: pointer; accent-color: #888; }
+
+        .toggle.voice-toggle:has(input:checked) {
+            border-color: #22c55e;
+            color: #22c55e;
+        }
+
+        #startBtn {
+            margin-left: auto;
+            background: #fff;
+            color: #000;
+            border: none;
+            border-radius: 9px;
+            padding: 11px 30px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+
+        #startBtn:hover { opacity: 0.85; }
+
+        .hint {
+            font-size: 11px;
+            color: #3a3a3a;
+            text-align: right;
+        }
+
+        /* ─── PROMPTER ─────────────────────────────────────────── */
+
+        #prompter {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #000;
+            overflow: hidden;
+            cursor: none;
+        }
+
+        #prompter.show-cursor { cursor: default; }
+
+        #textTrack {
+            position: absolute;
+            top: var(--text-top, 10px);
+            left: 0;
+            white-space: nowrap;
+            will-change: transform;
+        }
+
+        #promptText {
+            display: inline-block;
+            padding-left: 50vw;
+            padding-right: 50vw;
+            font-weight: 300;
+            line-height: 1;
+            text-rendering: optimizeLegibility;
+            color: rgba(255,255,255,0.75);
+        }
+
+        #promptText.mirror { transform: scaleX(-1); }
+
+        /* Subtle crosshair marks the camera centre */
+        #crosshair {
+            position: fixed;
+            left: 50%;
+            top: 0; bottom: 0;
+            width: 1px;
+            transform: translateX(-0.5px);
+            background: rgba(255,255,255,0.05);
+            z-index: 6;
+            pointer-events: none;
+        }
+
+        /*
+         * Left fade strong — past text disappears fast.
+         * Right fade softer — 4-5 upcoming words visible for phrasing.
+         */
+        #fadeLeft {
+            position: fixed;
+            left: 0; top: 0; bottom: 0;
+            width: 44%;
+            background: linear-gradient(to right, #000 60%, transparent 100%);
+            z-index: 7;
+            pointer-events: none;
+        }
+
+        #fadeRight {
+            position: fixed;
+            right: 0; top: 0; bottom: 0;
+            width: 36%;
+            background: linear-gradient(to left, #000 40%, transparent 100%);
+            z-index: 7;
+            pointer-events: none;
+        }
+
+        /* Mic / voice indicator — top right */
+        #micBar {
+            position: fixed;
+            top: 14px; right: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0,0,0,0.65);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px;
+            padding: 6px 14px 6px 10px;
+            z-index: 30;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        #micBar.visible { opacity: 1; }
+
+        /* Volume bar — shows mic is alive and how loud you are */
+        #volBar {
+            width: 56px;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        #volFill {
+            height: 100%;
+            width: 0%;
+            background: #22c55e;
+            border-radius: 2px;
+            transition: width 0.05s;
+        }
+
+        #micLabel { font-size: 11px; color: rgba(255,255,255,0.5); }
+
+        /* Overlay controls */
+        #overlay {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            padding: 12px 22px;
+            background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, transparent 100%);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 20;
+            opacity: 0;
+            transition: opacity 0.25s;
+            pointer-events: none;
+        }
+
+        #overlay.visible { opacity: 1; pointer-events: auto; }
+
+        .obtn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            border-radius: 7px;
+            padding: 5px 13px;
+            font-size: 12px;
+            cursor: pointer;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            transition: background 0.15s;
+            white-space: nowrap;
+        }
+
+        .obtn:hover  { background: rgba(255,255,255,0.2); }
+        .obtn.on     { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.45); color: #4ade80; }
+
+        #oStatus { color: rgba(255,255,255,0.4); font-size: 12px; min-width: 80px; }
+        #oHint   { margin-left: auto; color: rgba(255,255,255,0.22); font-size: 11px; }
+
+        #rowRow, #speedRow {
+            display: flex; align-items: center; gap: 7px;
+            color: rgba(255,255,255,0.4); font-size: 11px;
+        }
+        #rowSlider { width: 72px; accent-color: rgba(255,255,255,0.4); }
+        #overlaySpeedSlider { width: 90px; accent-color: rgba(255,255,255,0.4); }
+
+        #pausedBadge {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.75);
+            border: 1px solid rgba(255,255,255,0.18);
+            color: rgba(255,255,255,0.6);
+            border-radius: 10px;
+            padding: 10px 24px;
+            font-size: 14px;
+            z-index: 25;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        #pausedBadge.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<!-- ─── EDITOR ──────────────────────────────────────────────── -->
+<div id="editor">
+    <h1>Teleprompter <span>eyes on camera · MacBook Pro</span></h1>
+
+    <textarea id="scriptInput" placeholder="Paste your script here.
+
+With Voice Sync: scroll speed follows your voice — speak and it moves, pause and it stops. No word matching. Just your pace.
+
+Without Voice Sync: text scrolls at the fixed speed you set."></textarea>
+
+    <div class="controls">
+        <div class="ctrl">
+            <label>Reading Speed</label>
+            <div class="ctrl-row">
+                <input type="range" id="speedSlider" min="20" max="400" value="120">
+                <span class="val" id="speedVal">120</span>
+            </div>
+        </div>
+        <div class="ctrl">
+            <label>Font Size</label>
+            <div class="ctrl-row">
+                <input type="range" id="fontSlider" min="28" max="120" step="2" value="72">
+                <span class="val" id="fontVal">72px</span>
+            </div>
+        </div>
+        <div class="ctrl">
+            <label>Text Row</label>
+            <div class="ctrl-row">
+                <input type="range" id="rowSliderEditor" min="0" max="40" value="2">
+                <span class="val" id="rowVal">2%</span>
+            </div>
+        </div>
+        <div class="ctrl">
+            <label>Mic Sensitivity</label>
+            <div class="ctrl-row">
+                <input type="range" id="sensSlider" min="1" max="10" value="5">
+                <span class="val" id="sensVal">5</span>
+            </div>
+        </div>
+        <label class="toggle">
+            <input type="checkbox" id="mirrorToggle"> Mirror
+        </label>
+        <label class="toggle voice-toggle">
+            <input type="checkbox" id="voiceSyncToggle"> 🎤 Voice Sync
+        </label>
+        <button id="startBtn">Start ▶</button>
+    </div>
+
+    <div class="hint" id="editorHint">Space = pause · ↑↓ = speed · ← → = scrub · ESC = edit</div>
+</div>
+
+<!-- ─── PROMPTER ────────────────────────────────────────────── -->
+<div id="prompter">
+    <div id="crosshair"></div>
+    <div id="fadeLeft"></div>
+    <div id="fadeRight"></div>
+
+    <div id="textTrack">
+        <div id="promptText"></div>
+    </div>
+
+    <div id="micBar">
+        <div id="volBar"><div id="volFill"></div></div>
+        <span id="micLabel">Listening…</span>
+    </div>
+
+    <div id="overlay">
+        <button class="obtn" id="pauseBtn">⏸ Pause</button>
+        <button class="obtn" id="restartBtn">↺ Restart</button>
+        <button class="obtn" id="voiceToggleBtn" style="display:none">🎤 Voice</button>
+        <button class="obtn" id="editBtn">✕ Edit</button>
+        <span id="oStatus">Speed: 120</span>
+        <div id="speedRow">Speed: <input type="range" id="overlaySpeedSlider" min="20" max="400" value="120"><span id="overlaySpeedVal">120</span></div>
+        <div id="rowRow">Row: <input type="range" id="rowSlider" min="0" max="40" value="2"></div>
+        <span id="oHint">Space = pause · ↑↓ = speed · ← → = scrub · ESC = edit</span>
+    </div>
+
+    <div id="pausedBadge">⏸ Paused</div>
+</div>
+
+<script>
+// ── Elements ────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const scriptInput     = $('scriptInput');
+const speedSlider     = $('speedSlider');
+const fontSlider      = $('fontSlider');
+const rowSliderEditor = $('rowSliderEditor');
+const sensSlider      = $('sensSlider');
+const mirrorToggle    = $('mirrorToggle');
+const voiceSyncToggle = $('voiceSyncToggle');
+const startBtn        = $('startBtn');
+const speedVal        = $('speedVal');
+const fontVal         = $('fontVal');
+const rowVal          = $('rowVal');
+const sensVal         = $('sensVal');
+const editorHint      = $('editorHint');
+
+const prompter       = $('prompter');
+const textTrack      = $('textTrack');
+const promptText     = $('promptText');
+const overlay        = $('overlay');
+const pauseBtn       = $('pauseBtn');
+const restartBtn     = $('restartBtn');
+const voiceToggleBtn = $('voiceToggleBtn');
+const editBtn        = $('editBtn');
+const oStatus        = $('oStatus');
+const rowSlider           = $('rowSlider');
+const overlaySpeedSlider  = $('overlaySpeedSlider');
+const overlaySpeedVal     = $('overlaySpeedVal');
+const pausedBadge         = $('pausedBadge');
+const micBar         = $('micBar');
+const micLabel       = $('micLabel');
+const volFill        = $('volFill');
+
+// ── State ────────────────────────────────────────────────────────
+let scrollX      = 0;
+let speed        = 120;   // px/s at full voice
+let textTopPct   = 2;
+let isRunning    = false;
+let animFrame    = null;
+let lastTime     = null;
+let overlayTimer = null;
+let cursorTimer  = null;
+
+// Voice state
+let voiceMode    = false;
+let audioCtx     = null;
+let analyser     = null;
+let micStream    = null;
+let freqData     = null;
+let voiceLevel   = 0;     // smoothed 0–1 voice energy
+let sensitivity  = 5;
+
+// ── Editor controls ──────────────────────────────────────────────
+function syncSpeedUI() {
+    speedSlider.value = speed;
+    speedVal.textContent = speed;
+    overlaySpeedSlider.value = speed;
+    overlaySpeedVal.textContent = speed;
+    if (!voiceMode) oStatus.textContent = `Speed: ${speed}`;
+}
+
+speedSlider.addEventListener('input', () => {
+    speed = +speedSlider.value;
+    syncSpeedUI();
+});
+
+overlaySpeedSlider.addEventListener('input', (e) => {
+    e.stopPropagation();
+    speed = +overlaySpeedSlider.value;
+    syncSpeedUI();
+});
+overlaySpeedSlider.addEventListener('click', (e) => e.stopPropagation());
+fontSlider.addEventListener('input', () => {
+    fontVal.textContent = fontSlider.value + 'px';
+});
+rowSliderEditor.addEventListener('input', () => {
+    textTopPct = +rowSliderEditor.value;
+    rowVal.textContent = textTopPct + '%';
+});
+rowSlider.addEventListener('input', () => {
+    textTopPct = +rowSlider.value;
+    rowSliderEditor.value = textTopPct;
+    rowVal.textContent = textTopPct + '%';
+    applyTextTop();
+});
+sensSlider.addEventListener('input', () => {
+    sensitivity = +sensSlider.value;
+    sensVal.textContent = sensitivity;
+});
+voiceSyncToggle.addEventListener('change', () => {
+    editorHint.textContent = voiceSyncToggle.checked
+        ? 'Scroll follows your voice — speak to move, pause to stop · Space = pause · ESC = edit'
+        : 'Space = pause · ↑↓ = speed · ← → = scrub · ESC = edit';
+});
+
+function applyTextTop() {
+    const px = Math.round(window.innerHeight * textTopPct / 100);
+    document.documentElement.style.setProperty('--text-top', px + 'px');
+}
+
+// ── Text rendering ───────────────────────────────────────────────
+function renderText(text) {
+    return text.split(/\n\n+/).map(p =>
+        p.trim()
+         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+         .replace(/\n/g,' ')
+    ).join('&nbsp;&nbsp;&nbsp;◆&nbsp;&nbsp;&nbsp;');
+}
+
+// ── Launch ───────────────────────────────────────────────────────
+startBtn.addEventListener('click', launch);
+
+async function launch() {
+    const text = scriptInput.value.trim();
+    if (!text) {
+        scriptInput.classList.add('error');
+        scriptInput.focus();
+        setTimeout(() => scriptInput.classList.remove('error'), 1400);
+        return;
+    }
+
+    voiceMode = voiceSyncToggle.checked;
+    speed     = +speedSlider.value;
+    sensitivity = +sensSlider.value;
+
+    promptText.innerHTML = renderText(text);
+    promptText.style.fontSize = fontSlider.value + 'px';
+    mirrorToggle.checked ? promptText.classList.add('mirror') : promptText.classList.remove('mirror');
+
+    textTopPct = +rowSliderEditor.value;
+    rowSlider.value = textTopPct;
+    applyTextTop();
+
+    scrollX = 0;
+    applyScroll();
+
+    $('editor').style.display = 'none';
+    prompter.style.display = 'block';
+    prompter.requestFullscreen?.().catch(() => {});
+
+    pauseBtn.textContent = '⏸ Pause';
+    pausedBadge.classList.remove('visible');
+
+    if (voiceMode) {
+        const ok = await startMic();
+        if (!ok) {
+            // Mic failed — fall back to manual scroll
+            voiceMode = false;
+            micBar.classList.remove('visible');
+        } else {
+            voiceToggleBtn.style.display = '';
+            voiceToggleBtn.classList.add('on');
+            voiceToggleBtn.textContent = '🎤 On';
+            micBar.classList.add('visible');
+            micLabel.textContent = 'Listening…';
+            oStatus.textContent = 'Voice Sync';
+        }
+    }
+
+    overlaySpeedSlider.value = speed;
+    overlaySpeedVal.textContent = speed;
+
+    if (!voiceMode) {
+        voiceToggleBtn.style.display = 'none';
+        oStatus.textContent = `Speed: ${speed}`;
+    }
+
+    isRunning = true;
+    lastTime  = null;
+    animFrame = requestAnimationFrame(tick);
+
+    scheduleHideCursor();
+}
+
+// ── Mic / AudioContext ───────────────────────────────────────────
+async function startMic() {
+    try {
+        if (!audioCtx) {
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            audioCtx  = new AudioContext();
+            analyser  = audioCtx.createAnalyser();
+            analyser.fftSize = 1024;
+            analyser.smoothingTimeConstant = 0.5;
+            freqData  = new Uint8Array(analyser.frequencyBinCount);
+            const src = audioCtx.createMediaStreamSource(micStream);
+            src.connect(analyser);
+        } else if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        return true;
+    } catch(e) {
+        console.warn('Mic error:', e);
+        return false;
+    }
+}
+
+function stopMic() {
+    voiceLevel = 0;
+    volFill.style.width = '0%';
+    // Don't close audioCtx — keep it alive so we don't re-prompt
+}
+
+// ── Read current voice level 0–1 ─────────────────────────────────
+function readVoiceLevel() {
+    if (!analyser) return 0;
+    analyser.getByteFrequencyData(freqData);
+
+    // Focus on speech frequencies: roughly 200 Hz – 3000 Hz
+    const nyquist    = audioCtx.sampleRate / 2;
+    const binHz      = nyquist / freqData.length;
+    const loIdx      = Math.floor(200  / binHz);
+    const hiIdx      = Math.ceil(3000 / binHz);
+
+    let sum = 0;
+    for (let i = loIdx; i <= hiIdx; i++) sum += freqData[i];
+    const avg = sum / (hiIdx - loIdx + 1);
+
+    // Normalise to 0–1, apply sensitivity
+    // sensitivity 1 = need loud voice, 10 = very sensitive
+    const threshold = 110 - sensitivity * 9; // ~101 at sens=1, ~20 at sens=10
+    const raw = Math.max(0, avg - threshold) / (255 - threshold);
+    return Math.min(1, raw);
+}
+
+// ── Main animation tick ───────────────────────────────────────────
+function applyScroll() {
+    textTrack.style.transform = `translateX(${-scrollX}px)`;
+}
+
+function tick(ts) {
+    if (!isRunning) { animFrame = null; return; }
+
+    const dt = lastTime !== null ? (ts - lastTime) / 1000 : 0;
+    lastTime = ts;
+
+    let currentSpeed = speed;
+
+    if (voiceMode && analyser) {
+        // Smooth voice level with fast attack, slow decay
+        const raw = readVoiceLevel();
+        if (raw > voiceLevel) {
+            voiceLevel += (raw - voiceLevel) * 0.4;  // fast attack
+        } else {
+            voiceLevel += (raw - voiceLevel) * 0.06; // slow decay — gaps don't stop scroll
+        }
+        voiceLevel = Math.min(1, Math.max(0, voiceLevel));
+
+        // Scale scroll speed by voice level
+        // Below a dead zone (~0.04) = completely stopped
+        const deadzone = 0.04;
+        const active = Math.max(0, voiceLevel - deadzone) / (1 - deadzone);
+        currentSpeed = speed * active;
+
+        // Update volume bar
+        volFill.style.width = Math.round(voiceLevel * 100) + '%';
+    }
+
+    scrollX += currentSpeed * dt;
+    applyScroll();
+
+    // Stop at end
+    if (scrollX >= promptText.scrollWidth - window.innerWidth * 0.5) {
+        pause();
+        return;
+    }
+
+    animFrame = requestAnimationFrame(tick);
+}
+
+// ── Pause / resume ───────────────────────────────────────────────
+function pause() {
+    if (!isRunning) return;
+    isRunning = false;
+    cancelAnimationFrame(animFrame);
+    animFrame = null;
+    if (voiceMode) stopMic();
+    pauseBtn.textContent = '▶ Resume';
+    pausedBadge.classList.add('visible');
+}
+
+async function resume() {
+    if (isRunning) return;
+    pauseBtn.textContent = '⏸ Pause';
+    pausedBadge.classList.remove('visible');
+    if (voiceMode) await startMic();
+    isRunning = true;
+    lastTime  = null;
+    animFrame = requestAnimationFrame(tick);
+}
+
+const isPaused    = () => !isRunning;
+const togglePause = () => isPaused() ? resume() : pause();
+
+function restart() {
+    cancelAnimationFrame(animFrame);
+    animFrame  = null;
+    scrollX    = 0;
+    voiceLevel = 0;
+    volFill.style.width = '0%';
+    applyScroll();
+    pauseBtn.textContent = '⏸ Pause';
+    pausedBadge.classList.remove('visible');
+    isRunning = true;
+    lastTime  = null;
+    animFrame = requestAnimationFrame(tick);
+}
+
+function exitPrompter() {
+    cancelAnimationFrame(animFrame);
+    animFrame = null;
+    isRunning = false;
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (audioCtx)  { audioCtx.close(); audioCtx = null; analyser = null; }
+    voiceMode = false; voiceLevel = 0;
+    document.exitFullscreen?.().catch(() => {});
+    prompter.style.display = 'none';
+    $('editor').style.display = 'flex';
+}
+
+// ── Voice toggle mid-session ─────────────────────────────────────
+voiceToggleBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (voiceMode) {
+        voiceMode = false;
+        stopMic();
+        voiceToggleBtn.classList.remove('on');
+        voiceToggleBtn.textContent = '🎤 Off';
+        micBar.classList.remove('visible');
+        oStatus.textContent = `Speed: ${speed}`;
+    } else {
+        voiceMode = true;
+        const ok = await startMic();
+        if (ok) {
+            voiceToggleBtn.classList.add('on');
+            voiceToggleBtn.textContent = '🎤 On';
+            micBar.classList.add('visible');
+            oStatus.textContent = 'Voice Sync';
+        } else {
+            voiceMode = false;
+        }
+    }
+});
+
+// ── Buttons ──────────────────────────────────────────────────────
+pauseBtn.addEventListener('click',   (e) => { e.stopPropagation(); togglePause(); });
+restartBtn.addEventListener('click', (e) => { e.stopPropagation(); restart(); });
+editBtn.addEventListener('click',    (e) => { e.stopPropagation(); exitPrompter(); });
+
+// ── Keyboard ─────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+    if (prompter.style.display === 'none') return;
+    switch (e.code) {
+        case 'Space':  e.preventDefault(); togglePause(); break;
+        case 'Escape': exitPrompter(); break;
+        case 'ArrowUp':
+            e.preventDefault();
+            speed = Math.min(400, speed + 10);
+            syncSpeedUI();
+            flashOverlay(); break;
+        case 'ArrowDown':
+            e.preventDefault();
+            speed = Math.max(20, speed - 10);
+            syncSpeedUI();
+            flashOverlay(); break;
+        case 'ArrowLeft':
+            e.preventDefault();
+            scrollX = Math.max(0, scrollX - 250);
+            applyScroll(); break;
+        case 'ArrowRight':
+            e.preventDefault();
+            scrollX += 250;
+            applyScroll(); break;
+    }
+});
+
+// ── Click to pause ───────────────────────────────────────────────
+prompter.addEventListener('click', (e) => {
+    if (overlay.contains(e.target) || micBar.contains(e.target)) return;
+    togglePause();
+});
+
+// ── Scroll wheel to scrub ────────────────────────────────────────
+prompter.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    scrollX = Math.max(0, scrollX + e.deltaY * 0.7 + e.deltaX * 0.7);
+    applyScroll();
+}, { passive: false });
+
+// ── Overlay / cursor ─────────────────────────────────────────────
+prompter.addEventListener('mousemove', () => { flashOverlay(); scheduleHideCursor(); });
+
+function flashOverlay() {
+    overlay.classList.add('visible');
+    prompter.classList.add('show-cursor');
+    clearTimeout(overlayTimer);
+    overlayTimer = setTimeout(() => overlay.classList.remove('visible'), 2800);
+}
+
+function scheduleHideCursor() {
+    clearTimeout(cursorTimer);
+    prompter.classList.add('show-cursor');
+    cursorTimer = setTimeout(() => prompter.classList.remove('show-cursor'), 2800);
+}
+
+// ── localStorage ─────────────────────────────────────────────────
+const KEY = 'tp_script';
+const saved = localStorage.getItem(KEY);
+if (saved) scriptInput.value = saved;
+scriptInput.addEventListener('input', () => localStorage.setItem(KEY, scriptInput.value));
+</script>
+</body>
+</html>
