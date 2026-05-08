@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrolly Teleprompter</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --green: #22c55e;
+            --green-dim: rgba(34, 197, 94, 0.15);
+            --green-glow: rgba(34, 197, 94, 0.4);
+        }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ── HERO ── */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 60px 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated grid background */
+        .hero::before {
+            content: '';
+            position: absolute;
+            inset: -100px;
+            background-image:
+                linear-gradient(rgba(34,197,94,0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(34,197,94,0.04) 1px, transparent 1px);
+            background-size: 60px 60px;
+            animation: gridDrift 20s linear infinite;
+        }
+
+        @keyframes gridDrift {
+            from { transform: translateY(0); }
+            to   { transform: translateY(60px); }
+        }
+
+        /* Radial spotlight */
+        .hero::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(34,197,94,0.07) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-content { position: relative; z-index: 2; max-width: 760px; }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--green);
+            border: 1px solid rgba(34,197,94,0.3);
+            border-radius: 100px;
+            padding: 6px 16px;
+            margin-bottom: 32px;
+            animation: fadeUp 0.8s ease both;
+        }
+
+        .dot {
+            width: 7px; height: 7px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 1.8s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.4; transform: scale(0.7); }
+        }
+
+        h1 {
+            font-size: clamp(52px, 10vw, 100px);
+            font-weight: 800;
+            letter-spacing: -3px;
+            line-height: 0.95;
+            margin-bottom: 28px;
+            animation: fadeUp 0.8s 0.1s ease both;
+        }
+
+        h1 span {
+            background: linear-gradient(135deg, #fff 30%, var(--green) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tagline {
+            font-size: clamp(16px, 2.5vw, 22px);
+            color: rgba(255,255,255,0.5);
+            line-height: 1.5;
+            max-width: 540px;
+            margin: 0 auto 48px;
+            animation: fadeUp 0.8s 0.2s ease both;
+        }
+
+        .hero-cta {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeUp 0.8s 0.3s ease both;
+        }
+
+        .btn-primary {
+            background: var(--green);
+            color: #000;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 14px 32px;
+            border-radius: 10px;
+            text-decoration: none;
+            transition: transform 0.15s, box-shadow 0.15s;
+            box-shadow: 0 0 30px var(--green-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 50px var(--green-glow);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.8);
+            font-weight: 600;
+            font-size: 15px;
+            padding: 14px 32px;
+            border-radius: 10px;
+            text-decoration: none;
+            border: 1px solid rgba(255,255,255,0.12);
+            transition: background 0.15s, transform 0.15s;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateY(-2px);
+        }
+
+        /* Scrolling demo text */
+        .demo-strip {
+            width: 100%;
+            overflow: hidden;
+            margin: 80px 0 0;
+            padding: 20px 0;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            position: relative;
+            z-index: 2;
+        }
+
+        .demo-strip::before, .demo-strip::after {
+            content: '';
+            position: absolute;
+            top: 0; bottom: 0;
+            width: 120px;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .demo-strip::before { left: 0;  background: linear-gradient(to right, #000, transparent); }
+        .demo-strip::after  { right: 0; background: linear-gradient(to left,  #000, transparent); }
+
+        .demo-track {
+            display: flex;
+            gap: 48px;
+            width: max-content;
+            animation: scroll 18s linear infinite;
+            font-size: 15px;
+            color: rgba(255,255,255,0.2);
+            white-space: nowrap;
+            letter-spacing: 0.3px;
+        }
+
+        .demo-track span { color: var(--green); font-weight: 600; }
+
+        @keyframes scroll {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+        }
+
+        /* ── FEATURES ── */
+        .section {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 100px 24px;
+        }
+
+        .section-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--green);
+            margin-bottom: 16px;
+        }
+
+        .section h2 {
+            font-size: clamp(30px, 5vw, 48px);
+            font-weight: 800;
+            letter-spacing: -1.5px;
+            margin-bottom: 60px;
+            color: rgba(255,255,255,0.92);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .feature {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 16px;
+            padding: 28px;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .feature:hover {
+            border-color: rgba(34,197,94,0.3);
+            background: var(--green-dim);
+        }
+
+        .feature-icon {
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+
+        .feature h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .feature p {
+            font-size: 14px;
+            color: rgba(255,255,255,0.45);
+            line-height: 1.65;
+        }
+
+        /* ── HOW IT WORKS ── */
+        .steps {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .step {
+            display: flex;
+            gap: 28px;
+            align-items: flex-start;
+            padding: 32px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .step:last-child { border-bottom: none; }
+
+        .step-num {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--green);
+            background: var(--green-dim);
+            border: 1px solid rgba(34,197,94,0.25);
+            border-radius: 8px;
+            width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .step-body h3 {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .step-body p {
+            font-size: 14px;
+            color: rgba(255,255,255,0.45);
+            line-height: 1.6;
+        }
+
+        /* ── SHORTCUTS ── */
+        .keys {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .key-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 10px;
+            padding: 12px 18px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        kbd {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 5px;
+            padding: 3px 9px;
+            font-size: 12px;
+            font-family: inherit;
+            color: #fff;
+            white-space: nowrap;
+        }
+
+        .key-desc {
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+        }
+
+        /* ── CTA FOOTER ── */
+        .cta-footer {
+            text-align: center;
+            padding: 100px 24px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-footer::before {
+            content: '';
+            position: absolute;
+            bottom: -100px; left: 50%;
+            transform: translateX(-50%);
+            width: 600px; height: 300px;
+            background: radial-gradient(ellipse, rgba(34,197,94,0.12) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .cta-footer h2 {
+            font-size: clamp(28px, 5vw, 48px);
+            font-weight: 800;
+            letter-spacing: -1.5px;
+            margin-bottom: 16px;
+        }
+
+        .cta-footer p {
+            color: rgba(255,255,255,0.4);
+            font-size: 16px;
+            margin-bottom: 40px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 24px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.18);
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(24px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── HERO ── -->
+<section class="hero">
+    <div class="hero-content">
+        <div class="eyebrow"><div class="dot"></div> Free &amp; Open Source</div>
+        <h1><span>Scrolly</span><br>Teleprompter</h1>
+        <p class="tagline">A beautiful, voice-driven teleprompter that lives in a single file. No app, no subscription, no nonsense.</p>
+        <div class="hero-cta">
+            <a href="teleprompter.html" class="btn-primary">Launch Teleprompter ▶</a>
+            <a href="https://github.com/ploughran/Scrolly-Teleprompter" class="btn-secondary" target="_blank">View on GitHub</a>
+        </div>
+    </div>
+
+    <div class="demo-strip">
+        <div class="demo-track">
+            <span>🎤 Voice Sync</span> &nbsp;·&nbsp; speak and it moves, pause and it stops &nbsp;·&nbsp;
+            <span>⌨️ Keyboard Control</span> &nbsp;·&nbsp; space to pause, arrows to adjust speed &nbsp;·&nbsp;
+            <span>🪞 Mirror Mode</span> &nbsp;·&nbsp; flip text for physical teleprompter glass &nbsp;·&nbsp;
+            <span>💾 Auto-Save</span> &nbsp;·&nbsp; your script is always remembered &nbsp;·&nbsp;
+            <span>🎤 Voice Sync</span> &nbsp;·&nbsp; speak and it moves, pause and it stops &nbsp;·&nbsp;
+            <span>⌨️ Keyboard Control</span> &nbsp;·&nbsp; space to pause, arrows to adjust speed &nbsp;·&nbsp;
+            <span>🪞 Mirror Mode</span> &nbsp;·&nbsp; flip text for physical teleprompter glass &nbsp;·&nbsp;
+            <span>💾 Auto-Save</span> &nbsp;·&nbsp; your script is always remembered &nbsp;·&nbsp;
+        </div>
+    </div>
+</section>
+
+<!-- ── FEATURES ── -->
+<section class="section">
+    <p class="section-label">Features</p>
+    <h2>Everything you need.<br>Nothing you don't.</h2>
+    <div class="features">
+        <div class="feature">
+            <div class="feature-icon">🎤</div>
+            <h3>Voice Sync</h3>
+            <p>Scroll speed follows your voice in real time — speak and it moves, pause and it stops. No word matching, just your natural pace.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">⚡</div>
+            <h3>Zero Install</h3>
+            <p>One HTML file. Open it in Chrome or Safari and you're done. No app store, no Electron, no dependencies.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">🖥️</div>
+            <h3>Fullscreen Mode</h3>
+            <p>Clean black fullscreen display with soft edge fades, a centre crosshair for camera alignment, and a hidden cursor.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">🪞</div>
+            <h3>Mirror Mode</h3>
+            <p>Flip text horizontally for use with a physical teleprompter mirror or beam splitter rig.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">🎛️</div>
+            <h3>Live Controls</h3>
+            <p>Adjust speed and text position on the fly with the overlay controls — no need to stop and restart.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">💾</div>
+            <h3>Auto-Save</h3>
+            <p>Your script is automatically saved to localStorage so it's always there when you come back.</p>
+        </div>
+    </div>
+</section>
+
+<!-- ── HOW IT WORKS ── -->
+<section class="section" style="padding-top: 0;">
+    <p class="section-label">How It Works</p>
+    <h2>Up and running<br>in seconds.</h2>
+    <div class="steps">
+        <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+                <h3>Open the file</h3>
+                <p>Download the repo and open <code>teleprompter.html</code> in Chrome or Safari. That's it — no build step, no server.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+                <h3>Paste your script</h3>
+                <p>Drop your text into the editor. Paragraphs are automatically separated with a diamond marker in the prompter view.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+                <h3>Set your preferences</h3>
+                <p>Dial in your reading speed, font size, and text row position. Enable Voice Sync and mirror mode if you need them.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+                <h3>Hit Start and present</h3>
+                <p>The prompter goes fullscreen. Use your voice, keyboard, or the mouse overlay to control playback.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ── SHORTCUTS ── -->
+<section class="section" style="padding-top: 0;">
+    <p class="section-label">Keyboard Shortcuts</p>
+    <h2>Keep your hands free.</h2>
+    <div class="keys">
+        <div class="key-item"><kbd>Space</kbd>        <span class="key-desc">Pause / Resume</span></div>
+        <div class="key-item"><kbd>↑</kbd> / <kbd>↓</kbd> <span class="key-desc">Increase / decrease speed</span></div>
+        <div class="key-item"><kbd>←</kbd> / <kbd>→</kbd> <span class="key-desc">Scrub backward / forward</span></div>
+        <div class="key-item"><kbd>ESC</kbd>           <span class="key-desc">Exit to editor</span></div>
+    </div>
+</section>
+
+<!-- ── FOOTER CTA ── -->
+<section class="cta-footer">
+    <h2>Ready to read?</h2>
+    <p>Free forever. No account required.</p>
+    <div class="hero-cta" style="justify-content:center;">
+        <a href="teleprompter.html" class="btn-primary">Launch Teleprompter ▶</a>
+        <a href="https://github.com/ploughran/Scrolly-Teleprompter" class="btn-secondary" target="_blank">View on GitHub</a>
+    </div>
+</section>
+
+<footer>
+    Scrolly Teleprompter — open source, always free.
+</footer>
+
+</body>
+</html>
