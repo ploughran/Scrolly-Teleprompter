@@ -450,9 +450,10 @@ let freqData     = null;
 let recognition  = null;
 
 // Word tracking
-let words        = [];   // [{text, x}] — script words with their x positions
-let wordIdx      = 0;    // index of next word to look for in the script
-let processedWordCount = 0; // words in current recognition phrase already processed
+let words            = [];   // [{text, x}] — script words with their x positions
+let wordIdx          = 0;    // index of next word to look for in the script
+let phraseResultIdx  = -1;   // which result slot we're currently tracking
+let phraseWordsDone  = 0;    // how many words in that slot we've already processed
 
 // ── Helpers ──────────────────────────────────────────────────────
 function normalizeWord(w) {
@@ -578,20 +579,28 @@ function tryAdvance(spokenNorm) {
     }
 }
 
-function processTranscript(transcript, isFinal) {
+// Called once per result slot per event — only advances on words we haven't seen yet.
+function processResult(resultIdx, transcript, isFinal) {
     const spokenWords = transcript.trim().split(/\s+/).filter(Boolean);
-    // Only process words we haven't seen yet in this phrase
-    const newWords = spokenWords.slice(processedWordCount);
+
+    // New slot arriving — start fresh tracking for it
+    if (resultIdx !== phraseResultIdx) {
+        phraseResultIdx = resultIdx;
+        phraseWordsDone = 0;
+    }
+
+    const newWords = spokenWords.slice(phraseWordsDone);
     for (const w of newWords) {
         const norm = normalizeWord(w);
         if (norm) tryAdvance(norm);
     }
+
     if (isFinal) {
-        // Phrase complete — next phrase starts fresh
-        processedWordCount = 0;
+        // Phrase is sealed — reset so the next slot starts clean
+        phraseResultIdx = -1;
+        phraseWordsDone = 0;
     } else {
-        // Interim — remember how many words we've processed so far
-        processedWordCount = spokenWords.length;
+        phraseWordsDone = spokenWords.length;
     }
 }
 
@@ -608,7 +617,7 @@ function startRecognition() {
 
     recognition.onresult = (event) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
-            processTranscript(event.results[i][0].transcript, event.results[i].isFinal);
+            processResult(i, event.results[i][0].transcript, event.results[i].isFinal);
         }
     };
 
@@ -617,7 +626,9 @@ function startRecognition() {
     };
 
     recognition.onend = () => {
-        // Auto-restart while voice mode is active
+        // New session starts with a fresh result list — reset phrase tracking
+        phraseResultIdx = -1;
+        phraseWordsDone = 0;
         if (voiceMode && isRunning) {
             try { recognition.start(); } catch(e) {}
         }
@@ -820,10 +831,11 @@ const togglePause = () => isPaused() ? resume() : pause();
 function restart() {
     cancelAnimationFrame(animFrame);
     animFrame     = null;
-    scrollX            = 0;
-    targetScrollX      = 0;
-    wordIdx            = 0;
-    processedWordCount = 0;
+    scrollX         = 0;
+    targetScrollX   = 0;
+    wordIdx         = 0;
+    phraseResultIdx = -1;
+    phraseWordsDone = 0;
     volFill.style.width = '0%';
     applyScroll();
     updateScrollTarget();
@@ -842,7 +854,7 @@ function exitPrompter() {
     if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
     if (audioCtx)  { audioCtx.close(); audioCtx = null; analyser = null; }
     voiceMode = false;
-    words = []; wordIdx = 0; processedWordCount = 0; targetScrollX = 0;
+    words = []; wordIdx = 0; phraseResultIdx = -1; phraseWordsDone = 0; targetScrollX = 0;
     document.exitFullscreen?.().catch(() => {});
     prompter.style.display  = 'none';
     $('editor').style.display = 'flex';
