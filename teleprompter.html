@@ -452,6 +452,7 @@ let recognition  = null;
 // Word tracking
 let words        = [];   // [{text, x}] — script words with their x positions
 let wordIdx      = 0;    // index of next word to look for in the script
+let processedWordCount = 0; // words in current recognition phrase already processed
 
 // ── Helpers ──────────────────────────────────────────────────────
 function normalizeWord(w) {
@@ -577,11 +578,20 @@ function tryAdvance(spokenNorm) {
     }
 }
 
-function processTranscript(transcript) {
-    const spokenWords = transcript.trim().split(/\s+/);
-    for (const w of spokenWords) {
+function processTranscript(transcript, isFinal) {
+    const spokenWords = transcript.trim().split(/\s+/).filter(Boolean);
+    // Only process words we haven't seen yet in this phrase
+    const newWords = spokenWords.slice(processedWordCount);
+    for (const w of newWords) {
         const norm = normalizeWord(w);
         if (norm) tryAdvance(norm);
+    }
+    if (isFinal) {
+        // Phrase complete — next phrase starts fresh
+        processedWordCount = 0;
+    } else {
+        // Interim — remember how many words we've processed so far
+        processedWordCount = spokenWords.length;
     }
 }
 
@@ -598,7 +608,7 @@ function startRecognition() {
 
     recognition.onresult = (event) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
-            processTranscript(event.results[i][0].transcript);
+            processTranscript(event.results[i][0].transcript, event.results[i].isFinal);
         }
     };
 
@@ -705,7 +715,8 @@ async function launch() {
 
     // Measure word positions now that prompter is visible and scrollX=0
     measureWords();
-    updateScrollTarget();
+    // Don't pre-scroll in voice mode — start at word 1 and let speech drive it
+    if (!voiceMode) updateScrollTarget();
 
     if (voiceMode) {
         const micOk = await startMic();
@@ -809,9 +820,10 @@ const togglePause = () => isPaused() ? resume() : pause();
 function restart() {
     cancelAnimationFrame(animFrame);
     animFrame     = null;
-    scrollX       = 0;
-    targetScrollX = 0;
-    wordIdx       = 0;
+    scrollX            = 0;
+    targetScrollX      = 0;
+    wordIdx            = 0;
+    processedWordCount = 0;
     volFill.style.width = '0%';
     applyScroll();
     updateScrollTarget();
@@ -830,7 +842,7 @@ function exitPrompter() {
     if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
     if (audioCtx)  { audioCtx.close(); audioCtx = null; analyser = null; }
     voiceMode = false;
-    words = []; wordIdx = 0; targetScrollX = 0;
+    words = []; wordIdx = 0; processedWordCount = 0; targetScrollX = 0;
     document.exitFullscreen?.().catch(() => {});
     prompter.style.display  = 'none';
     $('editor').style.display = 'flex';
