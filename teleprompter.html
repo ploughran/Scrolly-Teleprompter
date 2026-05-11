@@ -569,7 +569,9 @@ function updateMicLabel() {
 // ── Word matching ────────────────────────────────────────────────
 function tryAdvance(spokenNorm) {
     if (!spokenNorm || !words.length) return;
-    const searchTo = Math.min(words.length - 1, wordIdx + 35);
+    // Small window: far enough to skip a mis-heard word, tight enough that common
+    // words ("the", "a", "to") don't leap to their next occurrence further ahead.
+    const searchTo = Math.min(words.length - 1, wordIdx + 6);
     for (let i = wordIdx; i <= searchTo; i++) {
         if (normalizeWord(words[i].text) === spokenNorm) {
             wordIdx = i + 1;
@@ -579,27 +581,35 @@ function tryAdvance(spokenNorm) {
     }
 }
 
-// Called once per result slot per event — only advances on words we haven't seen yet.
+// Called once per result slot per event.
+// Interim results get word-count-tracked to avoid reprocessing the same words.
+// Final results are always processed in full — interim word counts differ from
+// final (e.g. "never ending" interim → "neverending" final), so we can't rely
+// on phraseWordsDone to slice the final transcript correctly.
 function processResult(resultIdx, transcript, isFinal) {
     const spokenWords = transcript.trim().split(/\s+/).filter(Boolean);
 
-    // New slot arriving — start fresh tracking for it
-    if (resultIdx !== phraseResultIdx) {
-        phraseResultIdx = resultIdx;
-        phraseWordsDone = 0;
-    }
-
-    const newWords = spokenWords.slice(phraseWordsDone);
-    for (const w of newWords) {
-        const norm = normalizeWord(w);
-        if (norm) tryAdvance(norm);
-    }
-
     if (isFinal) {
-        // Phrase is sealed — reset so the next slot starts clean
+        // Process every word in the final transcript.
+        // Words already matched (behind wordIdx) will simply fail tryAdvance's
+        // small window check and be skipped safely.
+        for (const w of spokenWords) {
+            const norm = normalizeWord(w);
+            if (norm) tryAdvance(norm);
+        }
         phraseResultIdx = -1;
         phraseWordsDone = 0;
     } else {
+        // Interim: only process words that have newly appeared in this slot.
+        if (resultIdx !== phraseResultIdx) {
+            phraseResultIdx = resultIdx;
+            phraseWordsDone = 0;
+        }
+        const newWords = spokenWords.slice(phraseWordsDone);
+        for (const w of newWords) {
+            const norm = normalizeWord(w);
+            if (norm) tryAdvance(norm);
+        }
         phraseWordsDone = spokenWords.length;
     }
 }
